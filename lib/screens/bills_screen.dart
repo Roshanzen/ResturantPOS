@@ -208,23 +208,63 @@ class BillCard extends StatelessWidget {
           ),
           if (isPending) ...[
             const SizedBox(height: PosTheme.spacingMedium),
-            SizedBox(
-              width: double.infinity,
-              child: PosButton(
-                label: 'Checkout',
-                onPressed: () {
-                  showModalBottomSheet(
-                    context: context,
-                    isScrollControlled: true,
-                    backgroundColor: Colors.transparent,
-                    builder: (ctx) => ChangeNotifierProvider.value(
-                      value: provider,
-                      child: CheckoutBottomSheet(order: order),
-                    ),
-                  );
-                },
-                isSmall: true,
-              ),
+            Row(
+              children: [
+                Expanded(
+                  child: TextButton(
+                    onPressed: () {
+                      showDialog(
+                        context: context,
+                        builder: (ctx) => AlertDialog(
+                          title: const Text('Cancel Order?'),
+                          content: Text(
+                              'Are you sure you want to cancel order ${order.id}?'),
+                          actions: [
+                            TextButton(
+                              onPressed: () => Navigator.pop(ctx),
+                              child: const Text('Keep Order'),
+                            ),
+                            TextButton(
+                              onPressed: () {
+                                Navigator.pop(ctx);
+                                provider.cancelOrder(order.id);
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                      content:
+                                          Text('Order cancelled successfully'),
+                                      backgroundColor: PosTheme.primaryColor),
+                                );
+                              },
+                              child: const Text('Cancel Order',
+                                  style:
+                                      TextStyle(color: PosTheme.errorColor)),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                    child: const Text('Cancel Order'),
+                  ),
+                ),
+                const SizedBox(width: PosTheme.spacing),
+                Expanded(
+                  child: PosButton(
+                    label: 'Checkout',
+                    onPressed: () {
+                      showModalBottomSheet(
+                        context: context,
+                        isScrollControlled: true,
+                        backgroundColor: Colors.transparent,
+                        builder: (ctx) => ChangeNotifierProvider.value(
+                          value: provider,
+                          child: CheckoutBottomSheet(order: order),
+                        ),
+                      );
+                    },
+                    isSmall: true,
+                  ),
+                ),
+              ],
             ),
           ],
         ],

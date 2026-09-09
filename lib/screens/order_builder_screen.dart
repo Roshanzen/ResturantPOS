@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/menu_item.dart';
+import '../models/order.dart';
 import '../models/order_item.dart';
 import '../models/table.dart';
 import '../providers/pos_provider.dart';
@@ -10,8 +11,9 @@ import '../widgets/common.dart';
 
 class OrderBuilderScreen extends StatefulWidget {
   final RestaurantTable table;
+  final Order? existingOrder;
 
-  const OrderBuilderScreen({super.key, required this.table});
+  const OrderBuilderScreen({super.key, required this.table, this.existingOrder});
 
   @override
   State<OrderBuilderScreen> createState() => _OrderBuilderScreenState();
@@ -20,6 +22,18 @@ class OrderBuilderScreen extends StatefulWidget {
 class _OrderBuilderScreenState extends State<OrderBuilderScreen> {
   String _selectedCategory = 'All';
   final Map<String, int> _quantities = {};
+  final Map<String, int> _originalQuantities = {};
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.existingOrder != null) {
+      for (final item in widget.existingOrder!.items) {
+        _quantities[item.menuItem.itemCode] = item.quantity;
+        _originalQuantities[item.menuItem.itemCode] = item.quantity;
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -42,47 +56,75 @@ class _OrderBuilderScreenState extends State<OrderBuilderScreen> {
     return Scaffold(
       backgroundColor: PosTheme.backgroundColor,
       appBar: AppBar(
-        title: Text('Table ${widget.table.name.split(' ').last}'),
+        title: widget.existingOrder != null
+            ? Text('${widget.table.name} · ${widget.existingOrder!.id}')
+            : Text('Table ${widget.table.name}'),
         actions: [
-          if (totalItems > 0)
-            TextButton(
-              onPressed: () {
-                showModalBottomSheet(
-                  context: context,
-                  isScrollControlled: true,
-                  backgroundColor: Colors.transparent,
-                  builder: (ctx) {
-                    final orderItems = _quantities.entries.map((entry) {
-                      final item = provider.menuItems
-                          .firstWhere((m) => m.itemCode == entry.key);
-                      return OrderItem(menuItem: item, quantity: entry.value);
-                    }).toList();
-                    return ConfirmOrderBottomSheet(
-                      table: widget.table,
-                      items: orderItems,
-                    );
+              if (totalItems > 0)
+                TextButton(
+                  onPressed: () {
+                    if (widget.existingOrder != null) {
+                      final updatedItems = _quantities.entries.map((entry) {
+                        final item = provider.menuItems
+                            .firstWhere((m) => m.itemCode == entry.key);
+                        return OrderItem(menuItem: item, quantity: entry.value);
+                      }).toList();
+
+                      provider.addItemsToOrder(
+                          widget.existingOrder!.id, updatedItems);
+                      setState(() {
+                        for (final entry in _quantities.entries) {
+                          _originalQuantities[entry.key] = entry.value;
+                        }
+                      });
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                            content: Text('Order updated successfully'),
+                            backgroundColor: PosTheme.primaryColor),
+                      );
+                    } else {
+                      showModalBottomSheet(
+                        context: context,
+                        isScrollControlled: true,
+                        backgroundColor: Colors.transparent,
+                        builder: (ctx) {
+                          final orderItems = _quantities.entries
+                              .map((entry) {
+                            final item = provider.menuItems
+                                .firstWhere((m) => m.itemCode == entry.key);
+                            return OrderItem(
+                                menuItem: item, quantity: entry.value);
+                          }).toList();
+                          return ConfirmOrderBottomSheet(
+                            table: widget.table,
+                            items: orderItems,
+                          );
+                        },
+                      ).then((result) {
+                        if (result == true) {
+                          setState(() => _quantities.clear());
+                        }
+                      });
+                    }
                   },
-                ).then((result) {
-                  if (result == true) {
-                    setState(() => _quantities.clear());
-                  }
-                });
-              },
-              child: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                decoration: BoxDecoration(
-                    color: PosTheme.primaryColor,
-                    borderRadius: BorderRadius.circular(20)),
-                child: Text('Confirm ($totalItems)',
-                    style: const TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w700,
-                        color: Colors.white)),
-              ),
-            ),
-          const SizedBox(width: 8),
-        ],
+                  child: Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                    decoration: BoxDecoration(
+                        color: PosTheme.primaryColor,
+                        borderRadius: BorderRadius.circular(20)),
+                    child: Text(
+                        widget.existingOrder != null
+                            ? 'Update Order ($totalItems)'
+                            : 'Confirm ($totalItems)',
+                        style: const TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                            color: Colors.white)),
+                  ),
+                ),
+              const SizedBox(width: 8),
+            ],
       ),
       body: SafeArea(
         child: Column(
@@ -137,33 +179,42 @@ class _OrderBuilderScreenState extends State<OrderBuilderScreen> {
                     .toList(),
               ),
             ),
-            Expanded(
-              child: ListView.builder(
-                padding: const EdgeInsets.all(PosTheme.spacingMedium),
-                itemCount: items.length,
-                itemBuilder: (context, index) {
-                  final item = items[index];
-                  final qty = _quantities[item.itemCode] ?? 0;
-                  return MenuOrderItemCard(
-                    item: item,
-                    quantity: qty,
-                    onIncrement: () =>
-                        setState(() => _quantities[item.itemCode] = (qty + 1)),
-                    onDecrement: () {
-                      if (qty > 0) {
-                        final newQty = qty - 1;
-                        if (newQty == 0) {
-                          _quantities.remove(item.itemCode);
-                        } else {
-                          _quantities[item.itemCode] = newQty;
-                        }
-                        setState(() {});
-                      }
-                    },
-                  );
-                },
-              ),
-            ),
+             Expanded(
+               child: ListView.builder(
+                 padding: const EdgeInsets.all(PosTheme.spacingMedium),
+                 itemCount: items.length,
+                 itemBuilder: (context, index) {
+                   final item = items[index];
+                   final qty = _quantities[item.itemCode] ?? 0;
+                   final originalQty =
+                       _originalQuantities[item.itemCode] ?? 0;
+                   return MenuOrderItemCard(
+                     item: item,
+                     quantity: qty,
+                     originalQuantity: originalQty,
+                     onIncrement: () => setState(
+                         () => _quantities[item.itemCode] = (qty + 1)),
+                     onDecrement: () {
+                       if (qty > 0) {
+                         final effectiveOriginal =
+                             widget.existingOrder != null
+                                 ? (_originalQuantities[item.itemCode] ?? 0)
+                                 : 0;
+                         if (widget.existingOrder != null &&
+                             qty <= effectiveOriginal) return;
+                         final newQty = qty - 1;
+                         if (newQty == 0) {
+                           _quantities.remove(item.itemCode);
+                         } else {
+                           _quantities[item.itemCode] = newQty;
+                         }
+                         setState(() {});
+                       }
+                     },
+                   );
+                 },
+               ),
+             ),
           ],
         ),
       ),
@@ -174,6 +225,7 @@ class _OrderBuilderScreenState extends State<OrderBuilderScreen> {
 class MenuOrderItemCard extends StatelessWidget {
   final MenuItem item;
   final int quantity;
+  final int originalQuantity;
   final VoidCallback onIncrement;
   final VoidCallback onDecrement;
 
@@ -181,6 +233,7 @@ class MenuOrderItemCard extends StatelessWidget {
     super.key,
     required this.item,
     required this.quantity,
+    this.originalQuantity = 0,
     required this.onIncrement,
     required this.onDecrement,
   });
@@ -221,7 +274,9 @@ class MenuOrderItemCard extends StatelessWidget {
           Row(
             children: [
               GestureDetector(
-                onTap: quantity > 0 ? onDecrement : null,
+                onTap: quantity > 0 && !(quantity <= originalQuantity)
+                    ? onDecrement
+                    : null,
                 child: Container(
                   width: 32,
                   height: 32,

@@ -261,6 +261,154 @@ class POSProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> updateTable(String tableId,
+      {String? name, String? location, int? capacity}) async {
+    final now = DateTime.now().toIso8601String();
+    final updates = <String, dynamic>{'updated_at': now};
+    if (name != null) updates['name'] = name;
+    if (location != null) updates['location'] = location;
+    if (capacity != null) updates['capacity'] = capacity;
+
+    await database.update(
+      'tables',
+      updates,
+      where: 'id = ?',
+      whereArgs: [tableId],
+    );
+
+    final idx = _tables.indexWhere((t) => t.id == tableId);
+    if (idx >= 0) {
+      _tables[idx] = _tables[idx].copyWith(
+        name: name ?? _tables[idx].name,
+        location: location ?? _tables[idx].location,
+        capacity: capacity ?? _tables[idx].capacity,
+      );
+      notifyListeners();
+    }
+  }
+
+  Order? getActiveOrderForTable(String tableId) {
+    try {
+      return _orders.firstWhere(
+          (o) => o.tableId == tableId && o.status == 'pending');
+    } catch (e) {
+      return null;
+    }
+  }
+
+  Future<void> addItemsToOrder(
+      String orderId, List<OrderItem> newItems) async {
+    final idx = _orders.indexWhere((o) => o.id == orderId);
+    if (idx < 0) return;
+
+    final order = _orders[idx];
+    final now = DateTime.now().toIso8601String();
+
+    final itemRows = await database.query('order_items',
+        where: 'order_id = ?', whereArgs: [orderId]);
+
+    final Map<String, int> mergedQuantities = {};
+    final Map<String, MenuItem> itemMenuMap = {};
+
+    for (final row in itemRows) {
+      final menuItemId = row['menu_item_id'] as String;
+      final quantity = row['quantity'] as int;
+      mergedQuantities[menuItemId] = quantity;
+
+      final existingMenuItem = _menuItems.firstWhere(
+        (m) => m.id == menuItemId,
+        orElse: () => MenuItem(
+          id: menuItemId,
+          name: row['name_snapshot'] as String,
+          itemCode: row['sku_snapshot'] as String,
+          price: (row['unit_price_minor'] as int) / 100.0,
+          category: 'Unknown',
+          stockQuantity: 0,
+          preparationMinutes: 5,
+          available: true,
+          createdAt: DateTime.now(),
+          updatedAt: DateTime.now(),
+        ),
+      );
+      itemMenuMap[menuItemId] = existingMenuItem;
+    }
+
+    for (final item in newItems) {
+      mergedQuantities[item.menuItem.id] = item.quantity;
+      itemMenuMap[item.menuItem.id] = item.menuItem;
+    }
+
+    await database.delete('order_items',
+        where: 'order_id = ?', whereArgs: [orderId]);
+
+    double newTotal = 0.0;
+    for (final entry in mergedQuantities.entries) {
+      final menuItem = itemMenuMap[entry.key]!;
+      final unitPriceMinor = (menuItem.price * 100).round();
+      final lineTotalMinor = unitPriceMinor * entry.value;
+      newTotal += menuItem.price * entry.value;
+
+      final itemId =
+          'OI-${DateTime.now().millisecondsSinceEpoch}-${entry.key}';
+      await database.insert('order_items', {
+        'id': itemId,
+        'order_id': orderId,
+        'menu_item_id': entry.key,
+        'name_snapshot': menuItem.name,
+        'sku_snapshot': menuItem.itemCode,
+        'quantity': entry.value,
+        'unit_price_minor': unitPriceMinor,
+        'discount_minor': 0,
+        'tax_minor': 0,
+        'line_total_minor': lineTotalMinor,
+        'kitchen_status': 'pending',
+        'void_status': null,
+        'notes': null,
+        'modifiers': null,
+      });
+    }
+
+    final subtotalMinor = (newTotal * 100).round();
+    final discountMinor = (order.discount * 100).round();
+    final grandTotalMinor = subtotalMinor - discountMinor;
+
+    await database.update(
+      'orders',
+      {
+        'subtotal_minor': subtotalMinor,
+        'discount_minor': discountMinor,
+        'grand_total_minor': grandTotalMinor,
+        'balance_minor': grandTotalMinor,
+        'updated_at': now,
+      },
+      where: 'id = ?',
+      whereArgs: [orderId],
+    );
+
+    final updatedItems = mergedQuantities.entries.map((entry) {
+      return OrderItem(
+        menuItem: itemMenuMap[entry.key]!,
+        quantity: entry.value,
+      );
+    }).toList();
+
+    _orders[idx] = Order(
+      id: order.id,
+      tableId: order.tableId,
+      tableName: order.tableName,
+      customerId: order.customerId,
+      items: updatedItems,
+      totalAmount: newTotal - order.discount,
+      status: order.status,
+      createdAt: order.createdAt,
+      note: order.note,
+      paymentMethod: order.paymentMethod,
+      discount: order.discount,
+    );
+
+    notifyListeners();
+  }
+
   Future<void> addMenuItem(MenuItem item) async {
     final now = DateTime.now().toIso8601String();
     await database.insert('menu_items', {
@@ -433,18 +581,18 @@ class POSProvider extends ChangeNotifier {
       'terminal_id': 'terminal_001',
     });
 
+    _orders[orderIdx] = order.copyWith(
+      status: 'completed',
+      paymentMethod: paymentMethod,
+      discount: order.discount + discount,
+    );
+
     final pendingCount = _orders
         .where((o) => o.tableId == order.tableId && o.status == 'pending')
         .length;
 
     await updateTableStatus(order.tableId, pendingCount > 0 ? 'active' : 'free',
         orderCount: pendingCount, total: _calculateTableTotal(order.tableId));
-
-    _orders[orderIdx] = order.copyWith(
-      status: 'completed',
-      paymentMethod: paymentMethod,
-      discount: order.discount + discount,
-    );
 
     if (order.customerId != null) {
       final customerIdx =
@@ -485,6 +633,8 @@ class POSProvider extends ChangeNotifier {
       whereArgs: [orderId],
     );
 
+    _orders[idx] = order.copyWith(status: 'cancelled');
+
     final pendingCount = _orders
         .where((o) => o.tableId == order.tableId && o.status == 'pending')
         .length;
@@ -492,7 +642,6 @@ class POSProvider extends ChangeNotifier {
     await updateTableStatus(order.tableId, pendingCount > 0 ? 'active' : 'free',
         orderCount: pendingCount);
 
-    _orders[idx] = order.copyWith(status: 'cancelled');
     notifyListeners();
   }
 

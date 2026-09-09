@@ -20,7 +20,7 @@ class _SplashScreenState extends State<SplashScreen>
   void initState() {
     super.initState();
     _controller = AnimationController(
-      duration: const Duration(milliseconds: 1800),
+      duration: const Duration(milliseconds: 3000),
       vsync: this,
     );
 
@@ -40,7 +40,7 @@ class _SplashScreenState extends State<SplashScreen>
     final authController = AppBootstrap.authController;
     await authController.checkAuthStatus();
 
-    await Future.delayed(const Duration(milliseconds: 2200));
+    await Future.delayed(const Duration(milliseconds: 3000));
     if (!mounted) return;
 
     final isAuthenticated = authController.isAuthenticated;

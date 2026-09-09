@@ -6,7 +6,9 @@ import '../theme/pos_theme.dart';
 import '../widgets/common.dart';
 
 class NewTableScreen extends StatefulWidget {
-  const NewTableScreen({super.key});
+  final RestaurantTable? table;
+
+  const NewTableScreen({super.key, this.table});
 
   @override
   State<NewTableScreen> createState() => _NewTableScreenState();
@@ -19,11 +21,22 @@ class _NewTableScreenState extends State<NewTableScreen> {
   bool _isLoading = false;
 
   @override
+  void initState() {
+    super.initState();
+    if (widget.table != null) {
+      _nameController.text = widget.table!.name;
+      _capacityController.text = widget.table!.capacity.toString();
+      _location = widget.table!.location;
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final isEditing = widget.table != null;
     return Scaffold(
       backgroundColor: PosTheme.backgroundColor,
       appBar: AppBar(
-        title: const Text('Add table'),
+        title: Text(isEditing ? 'Edit table' : 'Add table'),
       ),
       body: SafeArea(
         child: SingleChildScrollView(
@@ -79,13 +92,18 @@ class _NewTableScreenState extends State<NewTableScreen> {
               SizedBox(
                 width: double.infinity,
                 child: PosButton(
-                  label: _isLoading ? 'Saving...' : 'Add table',
+                  label: _isLoading
+                      ? (isEditing ? 'Saving...' : 'Saving...')
+                      : (isEditing ? 'Save changes' : 'Add table'),
                   onPressed: _isLoading
                       ? null
                       : () {
                           final name = _nameController.text.trim();
-                          final capacity = int.tryParse(_capacityController.text);
-                          if (name.isEmpty || capacity == null || capacity <= 0) {
+                          final capacity =
+                              int.tryParse(_capacityController.text);
+                          if (name.isEmpty ||
+                              capacity == null ||
+                              capacity <= 0) {
                             ScaffoldMessenger.of(context).showSnackBar(
                               const SnackBar(
                                 content: Text(
@@ -96,18 +114,31 @@ class _NewTableScreenState extends State<NewTableScreen> {
                             return;
                           }
 
-                          final table = RestaurantTable(
-                            id: 'table_${DateTime.now().millisecondsSinceEpoch}',
-                            name: name,
-                            location: _location,
-                            capacity: capacity,
-                            status: 'free',
-                            orderCount: 0,
-                            runningTotal: 0.0,
-                          );
+                          if (isEditing) {
+                            context
+                                .read<POSProvider>()
+                                .updateTable(
+                                  widget.table!.id,
+                                  name: name,
+                                  location: _location,
+                                  capacity: capacity,
+                                );
+                            Navigator.pop(context, true);
+                          } else {
+                            final table = RestaurantTable(
+                              id:
+                                  'table_${DateTime.now().millisecondsSinceEpoch}',
+                              name: name,
+                              location: _location,
+                              capacity: capacity,
+                              status: 'free',
+                              orderCount: 0,
+                              runningTotal: 0.0,
+                            );
 
-                          context.read<POSProvider>().addTable(table);
-                          Navigator.pop(context, true);
+                            context.read<POSProvider>().addTable(table);
+                            Navigator.pop(context, true);
+                          }
                         },
                 ),
               ),
