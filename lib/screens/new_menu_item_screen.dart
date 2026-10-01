@@ -41,6 +41,8 @@ class _NewMenuItemScreenState extends State<NewMenuItemScreen> {
     }
   }
 
+  static const String _createNewCategorySentinel = '__ACTION_CREATE_NEW_CATEGORY__';
+
   @override
   Widget build(BuildContext context) {
     final provider = context.watch<POSProvider>();
@@ -57,6 +59,7 @@ class _NewMenuItemScreenState extends State<NewMenuItemScreen> {
     // If existing item has a category not in the list, keep it visible
     if (_category != null &&
         _category!.trim().isNotEmpty &&
+        _category != _createNewCategorySentinel &&
         !availableCategories.contains(_category)) {
       availableCategories.insert(0, _category!);
     }
@@ -64,61 +67,62 @@ class _NewMenuItemScreenState extends State<NewMenuItemScreen> {
 
     return Scaffold(
       backgroundColor: PosTheme.backgroundColor,
+      resizeToAvoidBottomInset: true,
       appBar: AppBar(
         title: Text(isEditing ? 'Edit menu item' : 'Add menu item'),
       ),
       body: SafeArea(
         child: SingleChildScrollView(
-          padding: const EdgeInsets.all(PosTheme.spacingMedium),
+          physics: const BouncingScrollPhysics(),
+          keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+          padding: const EdgeInsets.symmetric(
+            horizontal: PosTheme.spacingMedium,
+            vertical: PosTheme.spacingMedium,
+          ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               // 1. Product Name
               TextField(
                 controller: _nameController,
+                textInputAction: TextInputAction.next,
                 style:
                     const TextStyle(color: PosTheme.textPrimary, fontSize: 14),
-                decoration: const InputDecoration(
+                decoration: InputDecoration(
                   labelText: 'Product Name *',
                   hintText: 'e.g. Chicken Momo',
+                  filled: true,
+                  fillColor: PosTheme.inputBackground,
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 12,
+                  ),
+                  border: OutlineInputBorder(
+                    borderRadius:
+                        BorderRadius.circular(PosTheme.borderRadiusSmall),
+                    borderSide: BorderSide.none,
+                  ),
                 ),
               ),
               const SizedBox(height: PosTheme.spacingMedium),
 
               // 2. Category (Required - workflow: Name -> Category -> Price)
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  const Text(
-                    'Category *',
-                    style: TextStyle(fontSize: 13, color: PosTheme.textSecondary),
-                  ),
-                  TextButton.icon(
-                    onPressed: () => _showAddCategoryDialog(context, provider),
-                    icon: const Icon(Icons.add_circle_outline_rounded, size: 14),
-                    label: const Text('New category', style: TextStyle(fontSize: 12)),
-                    style: TextButton.styleFrom(
-                      foregroundColor: PosTheme.primaryColor,
-                      padding: EdgeInsets.zero,
-                      minimumSize: const Size(0, 0),
-                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    ),
-                  ),
-                ],
+              const Text(
+                'Category *',
+                style: TextStyle(fontSize: 13, color: PosTheme.textSecondary),
               ),
               const SizedBox(height: 6),
               DropdownButtonFormField<String>(
-                initialValue: (_category != null && availableCategories.contains(_category))
+                key: ValueKey(_category),
+                isExpanded: true,
+                initialValue: (_category != null &&
+                        _category != _createNewCategorySentinel &&
+                        availableCategories.contains(_category))
                     ? _category
                     : null,
-                hint: const Row(
-                  children: [
-                    Text(
-                      'Select category',
-                      style: TextStyle(
-                          color: PosTheme.textMuted, fontSize: 14),
-                    ),
-                  ],
+                hint: const Text(
+                  'Select category',
+                  style: TextStyle(color: PosTheme.textMuted, fontSize: 14),
                 ),
                 icon: const Icon(Icons.arrow_drop_down_rounded,
                     color: PosTheme.textSecondary),
@@ -136,16 +140,56 @@ class _NewMenuItemScreenState extends State<NewMenuItemScreen> {
                     borderSide: BorderSide.none,
                   ),
                 ),
-                items: availableCategories.map((c) {
-                  return DropdownMenuItem<String>(
-                    value: c,
-                    child: Text(c),
-                  );
-                }).toList(),
-                onChanged: (v) {
-                  setState(() {
-                    _category = v;
-                  });
+                items: [
+                  ...availableCategories.map((c) {
+                    return DropdownMenuItem<String>(
+                      value: c,
+                      child: Text(
+                        c,
+                        style: const TextStyle(
+                            color: PosTheme.textPrimary, fontSize: 14),
+                      ),
+                    );
+                  }),
+                  const DropdownMenuItem<String>(
+                    value: _createNewCategorySentinel,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.add_circle_outline_rounded,
+                            size: 16, color: PosTheme.primaryColor),
+                        SizedBox(width: 8),
+                        Flexible(
+                          child: Text(
+                            '＋ Create new category',
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: PosTheme.primaryColor,
+                              fontWeight: FontWeight.w600,
+                              fontSize: 14,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+                onChanged: (v) async {
+                  if (v == _createNewCategorySentinel) {
+                    final created =
+                        await _showAddCategoryDialog(context, provider);
+                    if (created != null && created.isNotEmpty) {
+                      setState(() {
+                        _category = created;
+                      });
+                    } else {
+                      setState(() {});
+                    }
+                  } else {
+                    setState(() {
+                      _category = v;
+                    });
+                  }
                 },
               ),
               const SizedBox(height: PosTheme.spacingMedium),
@@ -247,6 +291,7 @@ class _NewMenuItemScreenState extends State<NewMenuItemScreen> {
     // MANDATORY CATEGORY VALIDATION
     if (_category == null ||
         _category!.trim().isEmpty ||
+        _category == _createNewCategorySentinel ||
         _category!.trim().toLowerCase() == 'uncategorized' ||
         _category!.trim().toLowerCase() == 'select category') {
       _showError('Please select a category.');
@@ -315,9 +360,9 @@ class _NewMenuItemScreenState extends State<NewMenuItemScreen> {
     }
   }
 
-  void _showAddCategoryDialog(BuildContext context, POSProvider provider) {
+  Future<String?> _showAddCategoryDialog(BuildContext context, POSProvider provider) {
     final catController = TextEditingController();
-    showDialog(
+    return showDialog<String>(
       context: context,
       builder: (dialogCtx) => AlertDialog(
         backgroundColor: PosTheme.surfaceColor,
@@ -336,7 +381,7 @@ class _NewMenuItemScreenState extends State<NewMenuItemScreen> {
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(dialogCtx),
+            onPressed: () => Navigator.pop(dialogCtx, null),
             child: const Text('Cancel',
                 style: TextStyle(color: PosTheme.textSecondary)),
           ),
@@ -345,10 +390,7 @@ class _NewMenuItemScreenState extends State<NewMenuItemScreen> {
               final newName = catController.text.trim();
               if (newName.isNotEmpty) {
                 await provider.addCategory(newName);
-                setState(() {
-                  _category = newName;
-                });
-                if (dialogCtx.mounted) Navigator.pop(dialogCtx);
+                if (dialogCtx.mounted) Navigator.pop(dialogCtx, newName);
               }
             },
             child: const Text('Add'),

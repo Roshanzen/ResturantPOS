@@ -104,21 +104,29 @@ class _LoginScreenState extends State<LoginScreen> {
                   child: Column(
                     children: [
                       Container(
-                        width: 64,
-                        height: 64,
+                        width: 76,
+                        height: 76,
                         decoration: BoxDecoration(
-                          color: const Color(0xFF6F4E37).withValues(alpha: 0.15),
-                          shape: BoxShape.circle,
+                          borderRadius: BorderRadius.circular(18),
+                          boxShadow: [
+                            BoxShadow(
+                              color: PosTheme.primaryColor.withValues(alpha: 0.3),
+                              blurRadius: 18,
+                              spreadRadius: 1,
+                            ),
+                          ],
                         ),
-                        child: const Icon(
-                          Icons.coffee_rounded,
-                          size: 32,
-                          color: Color(0xFF6F4E37),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(18),
+                          child: Image.asset(
+                            'assets/images/logo.png',
+                            fit: BoxFit.contain,
+                          ),
                         ),
                       ),
                       const SizedBox(height: 16),
-                      Text(
-                        'RestroPOS',
+                      const Text(
+                        'RestroX',
                         style: TextStyle(
                           fontSize: 26,
                           fontWeight: FontWeight.w800,

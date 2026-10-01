@@ -91,49 +91,53 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
     }
   }
 
+  static const String _createNewCategorySentinel =
+      '__ACTION_CREATE_NEW_EXPENSE_CATEGORY__';
+
   @override
   Widget build(BuildContext context) {
     final provider = context.watch<POSProvider>();
     final categories = provider.expenseCategories;
 
+    final displayCategories = List<ExpenseCategory>.from(categories);
+    if (_selectedCategory != null &&
+        _selectedCategory!.id != _createNewCategorySentinel &&
+        !displayCategories.any((c) => c.id == _selectedCategory!.id)) {
+      displayCategories.insert(0, _selectedCategory!);
+    }
+
     return Scaffold(
       backgroundColor: PosTheme.backgroundColor,
+      resizeToAvoidBottomInset: true,
       appBar: AppBar(
         title: Text(isEditing ? 'Edit expense' : 'Add expense'),
       ),
       body: SafeArea(
         child: SingleChildScrollView(
-          padding: const EdgeInsets.all(PosTheme.spacingMedium),
+          physics: const BouncingScrollPhysics(),
+          keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+          padding: const EdgeInsets.symmetric(
+            horizontal: PosTheme.spacingMedium,
+            vertical: PosTheme.spacingMedium,
+          ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               // 1. Expense Category *
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  const Text(
-                    'Expense category *',
-                    style: TextStyle(fontSize: 13, color: PosTheme.textSecondary),
-                  ),
-                  TextButton.icon(
-                    onPressed: () => _showAddExpenseCategoryDialog(context, provider),
-                    icon: const Icon(Icons.add_circle_outline_rounded, size: 14),
-                    label: const Text('New category', style: TextStyle(fontSize: 12)),
-                    style: TextButton.styleFrom(
-                      foregroundColor: PosTheme.primaryColor,
-                      padding: EdgeInsets.zero,
-                      minimumSize: const Size(0, 0),
-                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    ),
-                  ),
-                ],
+              const Text(
+                'Expense category *',
+                style: TextStyle(fontSize: 13, color: PosTheme.textSecondary),
               ),
               const SizedBox(height: 6),
-              DropdownButtonFormField<ExpenseCategory>(
-                initialValue: _selectedCategory != null &&
-                        categories.any((c) => c.id == _selectedCategory!.id)
-                    ? categories.firstWhere((c) => c.id == _selectedCategory!.id)
-                    : _selectedCategory,
+              DropdownButtonFormField<String>(
+                key: ValueKey(_selectedCategory?.id),
+                isExpanded: true,
+                initialValue: (_selectedCategory != null &&
+                        _selectedCategory!.id != _createNewCategorySentinel &&
+                        displayCategories
+                            .any((c) => c.id == _selectedCategory!.id))
+                    ? _selectedCategory!.id
+                    : null,
                 hint: const Text(
                   'Select category',
                   style: TextStyle(color: PosTheme.textMuted, fontSize: 14),
@@ -154,16 +158,57 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
                     borderSide: BorderSide.none,
                   ),
                 ),
-                items: categories.map((cat) {
-                  return DropdownMenuItem<ExpenseCategory>(
-                    value: cat,
-                    child: Text(cat.name),
-                  );
-                }).toList(),
-                onChanged: (cat) {
-                  setState(() {
-                    _selectedCategory = cat;
-                  });
+                items: [
+                  ...displayCategories.map((cat) {
+                    return DropdownMenuItem<String>(
+                      value: cat.id,
+                      child: Text(
+                        cat.name,
+                        style: const TextStyle(
+                            color: PosTheme.textPrimary, fontSize: 14),
+                      ),
+                    );
+                  }),
+                  const DropdownMenuItem<String>(
+                    value: _createNewCategorySentinel,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.add_circle_outline_rounded,
+                            size: 16, color: PosTheme.primaryColor),
+                        SizedBox(width: 8),
+                        Flexible(
+                          child: Text(
+                            '＋ Create new category',
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: PosTheme.primaryColor,
+                              fontWeight: FontWeight.w600,
+                              fontSize: 14,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+                onChanged: (id) async {
+                  if (id == _createNewCategorySentinel) {
+                    final created =
+                        await _showAddExpenseCategoryDialog(context, provider);
+                    if (created != null) {
+                      setState(() {
+                        _selectedCategory = created;
+                      });
+                    } else {
+                      setState(() {});
+                    }
+                  } else if (id != null) {
+                    setState(() {
+                      _selectedCategory =
+                          displayCategories.firstWhere((c) => c.id == id);
+                    });
+                  }
                 },
               ),
               const SizedBox(height: PosTheme.spacingMedium),
@@ -258,15 +303,18 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
                             width: 1,
                           ),
                         ),
-                        child: Text(
-                          m.toUpperCase(),
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            color: isSelected
-                                ? PosTheme.primaryColor
-                                : PosTheme.textSecondary,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: Text(
+                            m.toUpperCase(),
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color: isSelected
+                                  ? PosTheme.primaryColor
+                                  : PosTheme.textSecondary,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                            ),
                           ),
                         ),
                       ),
@@ -319,7 +367,9 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
   }
 
   Future<void> _saveExpense() async {
-    if (_selectedCategory == null) {
+    if (_selectedCategory == null ||
+        _selectedCategory!.id == _createNewCategorySentinel ||
+        _selectedCategory!.name.trim().isEmpty) {
       _showError('Please select an expense category.');
       return;
     }
@@ -390,9 +440,10 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
     }
   }
 
-  void _showAddExpenseCategoryDialog(BuildContext context, POSProvider provider) {
+  Future<ExpenseCategory?> _showAddExpenseCategoryDialog(
+      BuildContext context, POSProvider provider) {
     final catController = TextEditingController();
-    showDialog(
+    return showDialog<ExpenseCategory>(
       context: context,
       builder: (dialogCtx) => AlertDialog(
         backgroundColor: PosTheme.surfaceColor,
@@ -411,7 +462,7 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(dialogCtx),
+            onPressed: () => Navigator.pop(dialogCtx, null),
             child: const Text('Cancel',
                 style: TextStyle(color: PosTheme.textSecondary)),
           ),
@@ -430,10 +481,7 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
                     updatedAt: DateTime.now(),
                   ),
                 );
-                setState(() {
-                  _selectedCategory = created;
-                });
-                if (dialogCtx.mounted) Navigator.pop(dialogCtx);
+                if (dialogCtx.mounted) Navigator.pop(dialogCtx, created);
               }
             },
             child: const Text('Add'),

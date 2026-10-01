@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:restaurant_pos/app/bootstrap.dart';
 import 'package:restaurant_pos/screens/login_screen.dart';
 import 'package:restaurant_pos/screens/main_screen.dart';
+import 'package:restaurant_pos/theme/pos_theme.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -78,8 +79,8 @@ class _SplashScreenState extends State<SplashScreen>
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
                 colors: [
-                  Colors.black.withValues(alpha: 0.2),
-                  Colors.black.withValues(alpha: 0.65),
+                  Colors.black.withValues(alpha: 0.3),
+                  Colors.black.withValues(alpha: 0.8),
                 ],
               ),
             ),
@@ -94,25 +95,30 @@ class _SplashScreenState extends State<SplashScreen>
                   children: [
                     const Spacer(),
                     Container(
-                      width: 88,
-                      height: 88,
+                      width: 110,
+                      height: 110,
                       decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.15),
-                        shape: BoxShape.circle,
-                        border: Border.all(
-                          color: Colors.white.withValues(alpha: 0.35),
-                          width: 1.5,
-                        ),
+                        borderRadius: BorderRadius.circular(24),
+                        boxShadow: [
+                          BoxShadow(
+                            color: PosTheme.primaryColor.withValues(alpha: 0.4),
+                            blurRadius: 30,
+                            spreadRadius: 2,
+                            offset: const Offset(0, 4),
+                          ),
+                        ],
                       ),
-                      child: const Icon(
-                        Icons.coffee_rounded,
-                        size: 44,
-                        color: Colors.white,
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(24),
+                        child: Image.asset(
+                          'assets/images/logo.png',
+                          fit: BoxFit.contain,
+                        ),
                       ),
                     ),
                     const SizedBox(height: 24),
-                    Text(
-                      'RestroPOS',
+                    const Text(
+                      'RestroX',
                       style: TextStyle(
                         fontSize: 34,
                         fontWeight: FontWeight.w800,
@@ -121,12 +127,12 @@ class _SplashScreenState extends State<SplashScreen>
                         fontFamily: 'Roboto',
                       ),
                     ),
-                    const SizedBox(height: 12),
+                    const SizedBox(height: 8),
                     Text(
                       'SIMPLE  •  SMART  •  POWERFUL',
                       style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w500,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
                         color: Colors.white.withValues(alpha: 0.85),
                         letterSpacing: 2.5,
                         fontFamily: 'Roboto',
@@ -138,7 +144,7 @@ class _SplashScreenState extends State<SplashScreen>
                       height: 28,
                       child: CircularProgressIndicator(
                         strokeWidth: 2.5,
-                        valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                        valueColor: AlwaysStoppedAnimation<Color>(PosTheme.primaryColor),
                       ),
                     ),
                     const SizedBox(height: 48),

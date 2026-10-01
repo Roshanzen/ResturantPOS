@@ -336,12 +336,13 @@ class POSProvider extends ChangeNotifier {
   }
 
   Future<void> updateTable(String tableId,
-      {String? name, String? location, int? capacity}) async {
+      {String? name, String? location, int? capacity, String? status}) async {
     final now = DateTime.now().toIso8601String();
     final updates = <String, dynamic>{'updated_at': now};
     if (name != null) updates['name'] = name;
     if (location != null) updates['location'] = location;
     if (capacity != null) updates['capacity'] = capacity;
+    if (status != null) updates['status'] = status;
 
     await database.update(
       'tables',
@@ -356,6 +357,7 @@ class POSProvider extends ChangeNotifier {
         name: name ?? _tables[idx].name,
         location: location ?? _tables[idx].location,
         capacity: capacity ?? _tables[idx].capacity,
+        status: status ?? _tables[idx].status,
       );
       notifyListeners();
     }

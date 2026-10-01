@@ -3,9 +3,11 @@ import 'package:path/path.dart';
 import 'package:restaurant_pos/core/database/database_service.dart';
 
 class NativeDatabaseService implements DatabaseService {
-  static const String _dbName = 'restaurant_pos.db';
+  final String dbName;
   static const int _dbVersion = 4;
   Database? _instance;
+
+  NativeDatabaseService({this.dbName = 'restaurant_pos.db'});
 
   Future<Database> get _db async {
     if (_instance != null) return _instance!;
@@ -13,9 +15,17 @@ class NativeDatabaseService implements DatabaseService {
     return _instance!;
   }
 
+  Future<void> close() async {
+    if (_instance != null) {
+      await _instance!.close();
+      _instance = null;
+    }
+  }
+
   Future<Database> _openDatabase() async {
     final dbPath = await getDatabasesPath();
-    final path = join(dbPath, _dbName);
+    final path =
+        dbName == inMemoryDatabasePath ? inMemoryDatabasePath : join(dbPath, dbName);
     return openDatabase(
       path,
       version: _dbVersion,
