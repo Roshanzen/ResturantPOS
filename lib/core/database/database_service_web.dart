@@ -46,8 +46,7 @@ class WebDatabaseService implements DatabaseService {
   @override
   Future<void> seedInitialData() async {
     await _ensureInitialized();
-    final existingMenu = _data['menu_items'] ?? [];
-    if (existingMenu.isNotEmpty) return;
+    // Production database initializes clean with zero demo records.
   }
 
 

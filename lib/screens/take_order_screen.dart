@@ -112,9 +112,19 @@ class _TakeOrderScreenState extends State<TakeOrderScreen> {
               ),
               const SizedBox(height: PosTheme.spacingLarge),
               if (provider.tables.isEmpty)
-                const EmptyState(
-                  title: 'No tables yet',
+                EmptyState(
+                  title: 'No tables configured',
                   subtitle: 'Add your first table to start taking orders.',
+                  actionText: 'Add table',
+                  onAction: () async {
+                    final result = await Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const NewTableScreen()),
+                    );
+                    if (result == true && mounted) {
+                      setState(() {});
+                    }
+                  },
                 )
               else
                 GridView.builder(

@@ -67,11 +67,19 @@ class _MenuScreenState extends State<MenuScreen> {
                   child: ListView(
                     scrollDirection: Axis.horizontal,
                     children: () {
-                      final cats = provider.menuItems
-                          .map((m) => m.category)
-                          .toSet()
+                      final categorySet = {
+                        'All',
+                        ...provider.categories.map((c) => c.name),
+                        ...provider.menuItems.map((m) => m.category),
+                      };
+                      final cats = categorySet
+                          .where((c) => c.trim().isNotEmpty)
                           .toList();
-                      cats.sort();
+                      cats.sort((a, b) {
+                        if (a == 'All') return -1;
+                        if (b == 'All') return 1;
+                        return a.toLowerCase().compareTo(b.toLowerCase());
+                      });
                       return cats;
                     }()
                         .map((cat) {
@@ -90,9 +98,19 @@ class _MenuScreenState extends State<MenuScreen> {
                 const SizedBox(height: PosTheme.spacingMedium),
               ],
               if (provider.menuItems.isEmpty)
-                const EmptyState(
-                  title: 'No menu items yet',
-                  subtitle: 'Start by adding your first item to the menu.',
+                EmptyState(
+                  title: 'No products yet',
+                  subtitle: 'Start by adding your first product to the menu.',
+                  actionText: 'Add product',
+                  onAction: () async {
+                    final result = await Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                            builder: (_) => const NewMenuItemScreen()));
+                    if (result == true && mounted) {
+                      setState(() {});
+                    }
+                  },
                 )
               else if (items.isEmpty)
                 const EmptyState(
@@ -102,7 +120,20 @@ class _MenuScreenState extends State<MenuScreen> {
               else
                 Column(
                   children: items.map((item) {
-                    return MenuItemCard(item: item);
+                    return MenuItemCard(
+                      item: item,
+                      onTap: () async {
+                        final result = await Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => NewMenuItemScreen(item: item),
+                          ),
+                        );
+                        if (result == true && mounted) {
+                          setState(() {});
+                        }
+                      },
+                    );
                   }).toList(),
                 ),
             ],
@@ -115,13 +146,15 @@ class _MenuScreenState extends State<MenuScreen> {
 
 class MenuItemCard extends StatelessWidget {
   final MenuItem item;
+  final VoidCallback? onTap;
 
-  const MenuItemCard({super.key, required this.item});
+  const MenuItemCard({super.key, required this.item, this.onTap});
 
   @override
   Widget build(BuildContext context) {
     final provider = context.read<POSProvider>();
     return PosCard(
+      onTap: onTap,
       padding: const EdgeInsets.symmetric(
           horizontal: PosTheme.cardPadding, vertical: 10),
       child: Row(

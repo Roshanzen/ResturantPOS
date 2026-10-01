@@ -1,7 +1,10 @@
-import 'package:flutter/foundation.dart';
+import 'package:flutter/foundation.dart' hide Category;
 import 'package:intl/intl.dart';
 import '../core/database/database_service.dart';
+import '../models/category.dart';
 import '../models/customer.dart';
+import '../models/expense.dart';
+import '../models/expense_category.dart';
 import '../models/menu_item.dart';
 import '../models/order.dart';
 import '../models/order_item.dart';
@@ -14,12 +17,20 @@ class POSProvider extends ChangeNotifier {
   List<MenuItem> _menuItems = [];
   List<Order> _orders = [];
   List<Customer> _customers = [];
+  List<Category> _categories = [];
+  List<ExpenseCategory> _expenseCategories = [];
+  List<Expense> _expenses = [];
   bool _isLoading = false;
 
   List<RestaurantTable> get tables => _tables;
   List<MenuItem> get menuItems => _menuItems;
   List<Order> get orders => _orders;
   List<Customer> get customers => _customers;
+  List<Category> get categories => _categories;
+  List<ExpenseCategory> get expenseCategories => _expenseCategories;
+  List<Expense> get expenses =>
+      _expenses.where((e) => !e.isDeleted).toList();
+  String get activeBranchId => 'branch_001';
   bool get isLoading => _isLoading;
 
   List<Order> get pendingOrders =>
@@ -33,12 +44,37 @@ class POSProvider extends ChangeNotifier {
   int get completedTodayCount => completedOrders.length;
   int get cancelledCount => cancelledOrders.length;
 
-  double get totalRevenue => _orders.fold(0.0, (sum, o) => sum + o.totalAmount);
-  double get totalDiscount => _orders.fold(0.0, (sum, o) => sum + o.discount);
+  double get totalRevenue => _orders
+      .where((o) => o.status != 'cancelled')
+      .fold(0.0, (sum, o) => sum + o.totalAmount + o.discount);
+  double get totalDiscount => _orders
+      .where((o) => o.status != 'cancelled')
+      .fold(0.0, (sum, o) => sum + o.discount);
   double get netAmount => totalRevenue - totalDiscount;
   int get totalOrdersCount => _orders.length;
   double get averageOrderValue =>
-      totalOrdersCount > 0 ? totalRevenue / totalOrdersCount : 0.0;
+      completedOrders.isNotEmpty ? netAmount / completedOrders.length : 0.0;
+
+  double get totalExpenses =>
+      expenses.fold(0.0, (sum, e) => sum + e.amount);
+
+  double get todayExpenses {
+    final now = DateTime.now();
+    return expenses.where((e) =>
+        e.expenseDate.year == now.year &&
+        e.expenseDate.month == now.month &&
+        e.expenseDate.day == now.day).fold(0.0, (sum, e) => sum + e.amount);
+  }
+
+  double get netProfit => netAmount - totalExpenses;
+
+  Map<String, double> get expensesByCategory {
+    final Map<String, double> map = {};
+    for (final e in expenses) {
+      map[e.categoryName] = (map[e.categoryName] ?? 0.0) + e.amount;
+    }
+    return map;
+  }
 
   double get cashCollection => _orders
       .where((o) => o.status == 'completed' && o.paymentMethod == 'cash')
@@ -161,6 +197,19 @@ class POSProvider extends ChangeNotifier {
         );
       }).toList();
 
+      final paymentRows = await database.query(
+        'payments',
+        where: 'order_id = ?',
+        whereArgs: [orderId],
+        limit: 1,
+      );
+      final paymentMethod = paymentRows.isNotEmpty
+          ? (paymentRows.first['payment_method'] as String?)
+          : (orderRow['paid_amount_minor'] != null &&
+                  (orderRow['paid_amount_minor'] as int) > 0
+              ? 'cash'
+              : null);
+
       _orders.add(Order(
         id: orderRow['id'] as String,
         tableId: orderRow['table_id'] as String,
@@ -171,13 +220,38 @@ class POSProvider extends ChangeNotifier {
         status: orderRow['status'] as String,
         createdAt: DateTime.parse(orderRow['created_at'] as String),
         note: orderRow['notes'] as String?,
-        paymentMethod: orderRow['paid_amount_minor'] != null &&
-                (orderRow['paid_amount_minor'] as int) > 0
-            ? 'completed'
-            : null,
+        paymentMethod: paymentMethod,
         discount: (orderRow['discount_minor'] as int) / 100.0,
       ));
     }
+
+    final categoryRows = await database.query('categories', orderBy: 'name ASC');
+    _categories = categoryRows.map((r) => Category.fromMap(r)).toList();
+    final existingCatNames =
+        _categories.map((c) => c.name.toLowerCase()).toSet();
+    for (final item in _menuItems) {
+      if (item.category.isNotEmpty &&
+          !existingCatNames.contains(item.category.toLowerCase())) {
+        final newCat = Category(
+          id: 'cat_${item.category.toLowerCase().replaceAll(' ', '_')}',
+          name: item.category,
+          createdAt: DateTime.now(),
+          updatedAt: DateTime.now(),
+        );
+        _categories.add(newCat);
+        existingCatNames.add(item.category.toLowerCase());
+      }
+    }
+    _categories.sort((a, b) => a.name.compareTo(b.name));
+
+    final expenseCatRows =
+        await database.query('expense_categories', orderBy: 'name ASC');
+    _expenseCategories =
+        expenseCatRows.map((r) => ExpenseCategory.fromMap(r)).toList();
+
+    final expenseRows = await database.query('expenses',
+        where: 'is_deleted = ?', whereArgs: [0], orderBy: 'expense_date DESC');
+    _expenses = expenseRows.map((r) => Expense.fromMap(r)).toList();
   }
 
   RestaurantTable? getTableById(String id) {
@@ -410,6 +484,13 @@ class POSProvider extends ChangeNotifier {
   }
 
   Future<void> addMenuItem(MenuItem item) async {
+    final trimmedCategory = item.category.trim();
+    if (trimmedCategory.isEmpty ||
+        trimmedCategory.toLowerCase() == 'uncategorized' ||
+        trimmedCategory.toLowerCase() == 'select category' ||
+        trimmedCategory.toLowerCase() == 'null') {
+      throw ArgumentError('Please select a category.');
+    }
     final now = DateTime.now().toIso8601String();
     await database.insert('menu_items', {
       'id': item.id,
@@ -434,6 +515,67 @@ class POSProvider extends ChangeNotifier {
       'updated_at': now,
     });
     _menuItems.add(item);
+    if (!_categories.any((c) => c.name.toLowerCase() == item.category.toLowerCase())) {
+      final newCat = Category(
+        id: 'cat_${item.category.toLowerCase().replaceAll(' ', '_')}',
+        name: item.category,
+        createdAt: DateTime.now(),
+        updatedAt: DateTime.now(),
+      );
+      _categories.add(newCat);
+      _categories.sort((a, b) => a.name.compareTo(b.name));
+    }
+    notifyListeners();
+  }
+
+  Future<void> updateMenuItem(MenuItem item) async {
+    final trimmedCategory = item.category.trim();
+    if (trimmedCategory.isEmpty ||
+        trimmedCategory.toLowerCase() == 'uncategorized' ||
+        trimmedCategory.toLowerCase() == 'select category' ||
+        trimmedCategory.toLowerCase() == 'null') {
+      throw ArgumentError('Please select a category.');
+    }
+    final now = DateTime.now().toIso8601String();
+    await database.update(
+      'menu_items',
+      {
+        'name': item.name,
+        'item_code': item.itemCode,
+        'barcode': item.barcode,
+        'category': item.category,
+        'price_minor': (item.price * 100).round(),
+        'cost_price_minor':
+            item.costPrice != null ? (item.costPrice! * 100).round() : null,
+        'tax_minor': item.tax != null ? (item.tax! * 100).round() : 0,
+        'discount_minor':
+            item.discount != null ? (item.discount! * 100).round() : 0,
+        'stock_quantity': item.stockQuantity,
+        'minimum_stock_level': item.minimumStockLevel,
+        'unit': item.unit,
+        'description': item.description,
+        'image_path': item.imagePath,
+        'preparation_minutes': item.preparationMinutes,
+        'available': item.available ? 1 : 0,
+        'updated_at': now,
+      },
+      where: 'id = ?',
+      whereArgs: [item.id],
+    );
+    final idx = _menuItems.indexWhere((m) => m.id == item.id);
+    if (idx >= 0) {
+      _menuItems[idx] = item;
+    }
+    if (!_categories.any((c) => c.name.toLowerCase() == item.category.toLowerCase())) {
+      final newCat = Category(
+        id: 'cat_${item.category.toLowerCase().replaceAll(' ', '_')}',
+        name: item.category,
+        createdAt: DateTime.now(),
+        updatedAt: DateTime.now(),
+      );
+      _categories.add(newCat);
+      _categories.sort((a, b) => a.name.compareTo(b.name));
+    }
     notifyListeners();
   }
 
@@ -450,6 +592,110 @@ class POSProvider extends ChangeNotifier {
       _menuItems[idx] = _menuItems[idx].copyWith(available: available);
       notifyListeners();
     }
+  }
+
+  Future<Expense> addExpense(Expense expense) async {
+    if (expense.title.trim().isEmpty) {
+      throw ArgumentError('Expense description is required.');
+    }
+    if (expense.categoryName.trim().isEmpty) {
+      throw ArgumentError('Please select an expense category.');
+    }
+    if (expense.amount <= 0) {
+      throw ArgumentError('Expense amount must be greater than zero.');
+    }
+
+    final expenseMap = expense.toMap();
+    await database.insert('expenses', expenseMap);
+    _expenses.insert(0, expense);
+    notifyListeners();
+    return expense;
+  }
+
+  Future<void> updateExpense(Expense expense) async {
+    if (expense.title.trim().isEmpty) {
+      throw ArgumentError('Expense description is required.');
+    }
+    if (expense.categoryName.trim().isEmpty) {
+      throw ArgumentError('Please select an expense category.');
+    }
+    if (expense.amount <= 0) {
+      throw ArgumentError('Expense amount must be greater than zero.');
+    }
+
+    final updated = expense.copyWith(updatedAt: DateTime.now());
+    await database.update(
+      'expenses',
+      updated.toMap(),
+      where: 'id = ?',
+      whereArgs: [expense.id],
+    );
+    final idx = _expenses.indexWhere((e) => e.id == expense.id);
+    if (idx >= 0) {
+      _expenses[idx] = updated;
+      notifyListeners();
+    }
+  }
+
+  Future<void> deleteExpense(String expenseId) async {
+    final now = DateTime.now().toIso8601String();
+    await database.update(
+      'expenses',
+      {'is_deleted': 1, 'updated_at': now},
+      where: 'id = ?',
+      whereArgs: [expenseId],
+    );
+    final idx = _expenses.indexWhere((e) => e.id == expenseId);
+    if (idx >= 0) {
+      _expenses[idx] = _expenses[idx].copyWith(isDeleted: true);
+      notifyListeners();
+    }
+  }
+
+  Future<void> addExpenseCategory(String name, {String branchId = 'branch_001'}) async {
+    final trimmed = name.trim();
+    if (trimmed.isEmpty) return;
+    final now = DateTime.now();
+    final id = 'ec_${DateTime.now().millisecondsSinceEpoch}';
+    final category = ExpenseCategory(
+      id: id,
+      name: trimmed,
+      branchId: branchId,
+      createdAt: now,
+      updatedAt: now,
+    );
+    await database.insert('expense_categories', category.toMap());
+    _expenseCategories.add(category);
+    _expenseCategories.sort((a, b) => a.name.compareTo(b.name));
+    notifyListeners();
+  }
+
+  Future<void> addCategory(String name) async {
+    final trimmed = name.trim();
+    if (trimmed.isEmpty) return;
+    final now = DateTime.now();
+    final id = 'cat_${DateTime.now().millisecondsSinceEpoch}';
+    final category = Category(
+      id: id,
+      name: trimmed,
+      createdAt: now,
+      updatedAt: now,
+    );
+    await database.insert('categories', category.toMap());
+    _categories.add(category);
+    _categories.sort((a, b) => a.name.compareTo(b.name));
+    notifyListeners();
+  }
+
+  List<Expense> filterExpensesByDateRange(DateTime start, DateTime end) {
+    return expenses.where((e) {
+      return !e.expenseDate.isBefore(start) && !e.expenseDate.isAfter(end);
+    }).toList();
+  }
+
+  List<Expense> filterExpensesByCategory(String categoryName) {
+    if (categoryName.toLowerCase() == 'all') return expenses;
+    return expenses.where((e) => e.categoryName.toLowerCase() == categoryName.toLowerCase()).toList();
   }
 
   Future<Order> createOrder({

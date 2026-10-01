@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../models/order.dart';
 import '../providers/pos_provider.dart';
 import 'checkout_bottom_sheet.dart';
+import 'expenses_screen.dart';
 import 'take_order_screen.dart';
 import '../theme/pos_theme.dart';
 import '../widgets/common.dart';
@@ -27,6 +28,19 @@ class _BillsScreenState extends State<BillsScreen> {
       appBar: AppBar(
         title: const Text('Bills & checkout'),
         actions: [
+          TextButton.icon(
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const ExpensesScreen()),
+              );
+            },
+            icon: const Icon(Icons.account_balance_wallet_outlined, size: 18),
+            label: const Text('Expenses',
+                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+            style: TextButton.styleFrom(foregroundColor: PosTheme.warningColor),
+          ),
+          const SizedBox(width: 4),
           TextButton.icon(
             onPressed: () {
               Navigator.of(context).pushReplacement(
@@ -101,7 +115,21 @@ class _BillsScreenState extends State<BillsScreen> {
                 ),
               ),
               const SizedBox(height: PosTheme.spacingLarge),
-              if (filteredOrders.isEmpty)
+              if (provider.orders.isEmpty)
+                EmptyState(
+                  title: 'No bills yet',
+                  subtitle:
+                      'Create orders from the tables screen to see bills here.',
+                  actionText: 'Take order',
+                  onAction: () {
+                    Navigator.of(context).pushReplacement(
+                      MaterialPageRoute(
+                          builder: (_) =>
+                              const TakeOrderScreen(initialTableId: null)),
+                    );
+                  },
+                )
+              else if (filteredOrders.isEmpty)
                 const EmptyState(
                     title: 'No bills found',
                     subtitle: 'Try changing the filter or create a new order.')

@@ -4,7 +4,7 @@ import 'package:restaurant_pos/core/database/database_service.dart';
 
 class NativeDatabaseService implements DatabaseService {
   static const String _dbName = 'restaurant_pos.db';
-  static const int _dbVersion = 3;
+  static const int _dbVersion = 4;
   Database? _instance;
 
   Future<Database> get _db async {
@@ -26,8 +26,52 @@ class NativeDatabaseService implements DatabaseService {
         if (oldVersion < 3) {
           await _migrateToV3(db);
         }
+        if (oldVersion < 4) {
+          await _migrateToV4(db);
+        }
       },
     );
+  }
+
+  Future<void> _migrateToV4(Database db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS categories (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL UNIQUE,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      )
+    ''');
+
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS expense_categories (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        branch_id TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        UNIQUE(name, branch_id)
+      )
+    ''');
+
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS expenses (
+        id TEXT PRIMARY KEY,
+        branch_id TEXT NOT NULL,
+        category_id TEXT NOT NULL,
+        category_name TEXT NOT NULL,
+        title TEXT NOT NULL,
+        amount_minor INTEGER NOT NULL,
+        expense_date TEXT NOT NULL,
+        payment_method TEXT NOT NULL,
+        reference_number TEXT,
+        notes TEXT,
+        created_by TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        is_deleted INTEGER NOT NULL DEFAULT 0
+      )
+    ''');
   }
 
   Future<void> _migrateToV3(Database db) async {
@@ -249,6 +293,45 @@ class NativeDatabaseService implements DatabaseService {
         updated_at TEXT NOT NULL
       )
     ''');
+
+    await db.execute('''
+      CREATE TABLE categories (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL UNIQUE,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      )
+    ''');
+
+    await db.execute('''
+      CREATE TABLE expense_categories (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        branch_id TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        UNIQUE(name, branch_id)
+      )
+    ''');
+
+    await db.execute('''
+      CREATE TABLE expenses (
+        id TEXT PRIMARY KEY,
+        branch_id TEXT NOT NULL,
+        category_id TEXT NOT NULL,
+        category_name TEXT NOT NULL,
+        title TEXT NOT NULL,
+        amount_minor INTEGER NOT NULL,
+        expense_date TEXT NOT NULL,
+        payment_method TEXT NOT NULL,
+        reference_number TEXT,
+        notes TEXT,
+        created_by TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        is_deleted INTEGER NOT NULL DEFAULT 0
+      )
+    ''');
   }
 
   @override
@@ -258,9 +341,7 @@ class NativeDatabaseService implements DatabaseService {
 
   @override
   Future<void> seedInitialData() async {
-    final db = await _db;
-    final existingMenu = await db.query('menu_items', limit: 1);
-    if (existingMenu.isNotEmpty) return;
+    // Production database initializes clean with zero demo records.
   }
 
 
@@ -332,6 +413,9 @@ class NativeDatabaseService implements DatabaseService {
   @override
   Future<void> clearAllData() async {
     final db = await _db;
+    await db.delete('expenses');
+    await db.delete('expense_categories');
+    await db.delete('categories');
     await db.delete('order_items');
     await db.delete('orders');
     await db.delete('payments');

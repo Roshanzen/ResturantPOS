@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../models/category.dart';
 import '../models/menu_item.dart';
 import '../models/order.dart';
 import '../models/order_item.dart';
@@ -42,10 +43,12 @@ class _OrderBuilderScreenState extends State<OrderBuilderScreen> {
         ? provider.menuItems
         : provider.filterMenuItemsByCategory(_selectedCategory);
 
-    final categories = [
+    final categorySet = {
       'All',
-      ...provider.menuItems.map((m) => m.category).toSet().toList()
-    ];
+      ...provider.categories.map((Category c) => c.name),
+      ...provider.menuItems.map((m) => m.category)
+    };
+    final categories = categorySet.toList();
     final totalItems = _quantities.values.fold(0, (sum, q) => sum + q);
     final totalAmount = _quantities.entries.fold(0.0, (sum, entry) {
       final item =

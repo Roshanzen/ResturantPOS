@@ -55,10 +55,26 @@ class _CustomersScreenState extends State<CustomersScreen> {
               ),
             ),
             Expanded(
-              child: filtered.isEmpty
-                  ? const EmptyState(
-                      title: 'No customers found',
-                      subtitle: 'Try a different search or add a new customer.')
+              child: provider.customers.isEmpty
+                  ? EmptyState(
+                      title: 'No customers yet',
+                      subtitle: 'Add your first customer to track visits and credit.',
+                      actionText: 'Add customer',
+                      onAction: () async {
+                        final result = await Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                                builder: (_) => const NewCustomerScreen()));
+                        if (result == true && mounted) {
+                          setState(() {});
+                        }
+                      },
+                    )
+                  : filtered.isEmpty
+                      ? const EmptyState(
+                          title: 'No customers found',
+                          subtitle:
+                              'Try a different search or add a new customer.')
                   : ListView.builder(
                       padding: const EdgeInsets.symmetric(
                           horizontal: PosTheme.spacingMedium),

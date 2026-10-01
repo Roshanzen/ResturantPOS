@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../providers/pos_provider.dart';
 import '../theme/pos_theme.dart';
 import '../widgets/common.dart';
+import 'expenses_screen.dart';
 
 class AnalyticsScreen extends StatelessWidget {
   const AnalyticsScreen({super.key});
@@ -18,16 +19,15 @@ class AnalyticsScreen extends StatelessWidget {
         actions: [
           TextButton.icon(
             onPressed: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                    content: Text('Report export initiated'),
-                    backgroundColor: PosTheme.primaryColor),
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const ExpensesScreen()),
               );
             },
-            icon: const Icon(Icons.download_rounded, size: 18),
-            label: const Text('Export report',
+            icon: const Icon(Icons.account_balance_wallet_outlined, size: 18),
+            label: const Text('Expenses',
                 style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
-            style: TextButton.styleFrom(foregroundColor: PosTheme.primaryColor),
+            style: TextButton.styleFrom(foregroundColor: PosTheme.warningColor),
           ),
           const SizedBox(width: 8),
         ],
@@ -52,8 +52,20 @@ class AnalyticsScreen extends StatelessWidget {
                       label: 'Total revenue',
                       value: provider.formatCurrency(provider.totalRevenue)),
                   MetricCard(
-                      label: 'Net amount',
+                      label: 'Net sales',
                       value: provider.formatCurrency(provider.netAmount)),
+                  MetricCard(
+                      label: 'Operating expenses',
+                      value: provider.formatCurrency(provider.totalExpenses),
+                      subtext: '${provider.expenses.length} recorded',
+                      accentColor: PosTheme.warningColor),
+                  MetricCard(
+                      label: 'Net profit',
+                      value: provider.formatCurrency(provider.netProfit),
+                      subtext: 'Sales - Expenses',
+                      accentColor: provider.netProfit >= 0
+                          ? PosTheme.primaryColor
+                          : PosTheme.errorColor),
                   MetricCard(
                       label: 'Discounts',
                       value: provider.formatCurrency(provider.totalDiscount)),
@@ -61,10 +73,6 @@ class AnalyticsScreen extends StatelessWidget {
                       label: 'Orders',
                       value: provider.totalOrdersCount.toString(),
                       subtext: 'Total orders'),
-                  MetricCard(
-                      label: 'Average order',
-                      value:
-                          provider.formatCurrency(provider.averageOrderValue)),
                 ],
               ),
               const SizedBox(height: PosTheme.spacingLarge),
@@ -135,6 +143,95 @@ class AnalyticsScreen extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: PosTheme.spacingLarge),
+              SectionHeader(
+                title: 'Operating expenses',
+                actionText: 'Manage expenses',
+                onActionTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const ExpensesScreen()),
+                  );
+                },
+              ),
+              const SizedBox(height: PosTheme.spacingSmall),
+              if (provider.expenses.isEmpty)
+                PosCard(
+                  padding: const EdgeInsets.all(PosTheme.cardPadding),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text(
+                        'No operating expenses recorded',
+                        style: TextStyle(
+                            fontSize: 13, color: PosTheme.textMuted),
+                      ),
+                      TextButton(
+                        onPressed: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                                builder: (_) => const ExpensesScreen()),
+                          );
+                        },
+                        child: const Text('Add expense'),
+                      ),
+                    ],
+                  ),
+                )
+              else
+                PosCard(
+                  padding: const EdgeInsets.all(PosTheme.cardPadding),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text(
+                            'Total Expenses',
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                              color: PosTheme.textSecondary,
+                            ),
+                          ),
+                          Text(
+                            provider.formatCurrency(provider.totalExpenses),
+                            style: const TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w700,
+                              color: PosTheme.warningColor,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      const Divider(),
+                      const SizedBox(height: 8),
+                      ...provider.expensesByCategory.entries.map((entry) {
+                        return Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 4),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(entry.key,
+                                  style: const TextStyle(
+                                      fontSize: 13, color: PosTheme.textPrimary)),
+                              Text(
+                                provider.formatCurrency(entry.value),
+                                style: const TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w600,
+                                    color: PosTheme.textSecondary),
+                              ),
+                            ],
+                          ),
+                        );
+                      }).toList(),
+                    ],
+                  ),
+                ),
+              const SizedBox(height: PosTheme.spacingLarge),
               const Text('Hourly sales velocity',
                   style: TextStyle(
                       fontSize: 15,
@@ -182,7 +279,14 @@ class AnalyticsScreen extends StatelessWidget {
                       fontWeight: FontWeight.w700,
                       color: PosTheme.textPrimary)),
               const SizedBox(height: PosTheme.spacingMedium),
-              ...provider.getTopSellingItems().map((entry) {
+              if (provider.getTopSellingItems().isEmpty)
+                const EmptyState(
+                  title: 'Not enough data yet',
+                  subtitle: 'Completed orders will populate top selling items.',
+                  icon: Icons.trending_up_rounded,
+                )
+              else
+                ...provider.getTopSellingItems().map((entry) {
                 final item = entry.key;
                 final sold = entry.value;
                 final revenue = item.price * sold;
@@ -238,7 +342,9 @@ class _HourlySalesChart extends StatelessWidget {
     final entries = hourly.entries.where((e) => e.value > 0).toList();
     if (entries.isEmpty) {
       return const EmptyState(
-          title: 'No sales data', icon: Icons.show_chart_rounded);
+          title: 'Not enough data yet',
+          subtitle: 'Completed sales from the last 24 hours will appear here.',
+          icon: Icons.show_chart_rounded);
     }
     final maxValue =
         entries.map((e) => e.value).reduce((a, b) => a > b ? a : b);

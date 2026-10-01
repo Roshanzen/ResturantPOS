@@ -309,12 +309,17 @@ class EmptyState extends StatelessWidget {
   final String title;
   final String? subtitle;
   final IconData icon;
+  final String? actionText;
+  final VoidCallback? onAction;
 
-  const EmptyState(
-      {super.key,
-      required this.title,
-      this.subtitle,
-      this.icon = Icons.inbox_rounded});
+  const EmptyState({
+    super.key,
+    required this.title,
+    this.subtitle,
+    this.icon = Icons.inbox_rounded,
+    this.actionText,
+    this.onAction,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -337,6 +342,24 @@ class EmptyState extends StatelessWidget {
                   textAlign: TextAlign.center,
                   style:
                       const TextStyle(fontSize: 13, color: PosTheme.textMuted)),
+            ],
+            if (actionText != null && onAction != null) ...[
+              const SizedBox(height: 16),
+              ElevatedButton.icon(
+                onPressed: onAction,
+                icon: const Icon(Icons.add_rounded, size: 18),
+                label: Text(actionText!),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: PosTheme.primaryColor,
+                  foregroundColor: Colors.white,
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                  shape: RoundedRectangleBorder(
+                    borderRadius:
+                        BorderRadius.circular(PosTheme.borderRadiusSmall),
+                  ),
+                ),
+              ),
             ],
           ],
         ),
